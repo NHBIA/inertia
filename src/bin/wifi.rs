@@ -46,7 +46,7 @@ async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'stat
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-    let fw = include_bytes!("../../firmware/cyw43-firmware/43439A0.bin");
+    let fw = include_bytes!("../../firmware/cyw43-firmware/43439A0_btfw.bin");
     let clm = include_bytes!("../../firmware/cyw43-firmware/43439A0_clm.bin");
 
     // To make flashing faster for development, you may want to flash the firmwares independently
