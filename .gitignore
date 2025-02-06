@@ -2,3 +2,5 @@ build
 Cargo.lock
 .env
 target
+sdk_and_tools/*
+*.hide

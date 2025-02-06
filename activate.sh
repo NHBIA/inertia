@@ -1,0 +1,4 @@
+source .env
+
+PATH="$PICO_SDK_PATH:$PATH"
+PATH="$PICO_TOOL_PATH:$PATH"
