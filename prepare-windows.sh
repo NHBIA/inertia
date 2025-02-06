@@ -18,6 +18,8 @@ PICO_SDK_DIR="$SPECIAL_DIR/pico-sdk-tools"
 PICO_TOOLS_DIR="$SPECIAL_DIR/picotool"
 PICO_OPENOCD_DIR="$SPECIAL_DIR/openocd"
 
+
+
 # Create directories if they don't exist
 mkdir -p $PICO_SDK_DIR
 mkdir -p $PICO_TOOLS_DIR
@@ -49,5 +51,5 @@ echo "Pico SDK and Picotools have been downloaded and extracted to $SPECIAL_DIR.
 
 #generate .env file with to path for each directory
 
-echo "PICO_SDK_PATH=$PWD/$PICO_SDK_DIR" > .env
-echo "PICO_TOOL_PATH=$PWD/$PICO_TOOLS_DIR" >> .env
+echo "PICO_SDK_PATH=$PWD/$PICO_SDK_DIR/pioasm" > .env
+echo "PICO_TOOL_PATH=$PWD/$PICO_TOOLS_DIR/picotool" >> .env
