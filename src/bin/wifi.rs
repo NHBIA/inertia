@@ -9,6 +9,7 @@ use defmt::*;
 use embassy_executor::Spawner;
 use embassy_net::udp::UdpSocket;
 use embassy_net::{Config, Stack, StackResources};
+use embassy_net::Runner;
 use embassy_rp::bind_interrupts;
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
@@ -40,8 +41,8 @@ static RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
 static NET_STACK: StaticCell<Stack<'static>> = StaticCell::new();
 
 #[embassy_executor::task]
-async fn net_task(stack: &'static Stack<'static>) {
-    stack.run().await;
+async fn net_task(mut runner: Runner<'static, cyw43::NetDriver<'static>>) {
+    runner.run().await;
 }
 
 #[embassy_executor::task]
@@ -89,7 +90,8 @@ async fn main(spawner: Spawner) {
     let seed = embassy_time::Instant::now().as_ticks() as u64;
     let stack = NET_STACK.init(Stack::new(net_device, config, resources, seed));
 
-    unwrap!(spawner.spawn(net_task(stack)));
+    let runner = stack.runner();
+    unwrap!(spawner.spawn(net_task(runner)));
 
     // Wait for network
     loop {
