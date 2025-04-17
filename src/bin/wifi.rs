@@ -40,7 +40,7 @@ static RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
 static NET_STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
 
 #[embassy_executor::task]
-async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) {
+async fn net_task(stack: &'static Stack<'static>) {
     stack.run().await;
 }
 
