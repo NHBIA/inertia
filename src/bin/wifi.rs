@@ -37,7 +37,7 @@ bind_interrupts!(struct Irqs {
 
 static STATE: StaticCell<cyw43::State> = StaticCell::new();
 static RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
-static NET_STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
+static NET_STACK: StaticCell<Stack<'static>> = StaticCell::new();
 
 #[embassy_executor::task]
 async fn net_task(stack: &'static Stack<'static>) {
