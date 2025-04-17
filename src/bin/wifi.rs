@@ -1,17 +1,18 @@
-//! This example test the Pimoroni Pico Plus 2 on board LED.
-//!
-//! It does not work with the RP Pico board. See blinky.rs.
+//! Raspberry Pi Pico W 2 - Embassy UDP Example
 
 #![no_std]
 #![no_main]
 
+use core::fmt::Write;
 use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use defmt::*;
 use embassy_executor::Spawner;
-use embassy_rp::block::ImageDef;
+use embassy_net::udp::UdpSocket;
+use embassy_net::{Config, Stack, StackResources};
+use embassy_rp::bind_interrupts;
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::{bind_interrupts, gpio};
+use embassy_rp::{gpio, block::ImageDef};
 use embassy_time::{Duration, Timer};
 use gpio::{Level, Output};
 use static_cell::StaticCell;
@@ -21,15 +22,11 @@ use {defmt_rtt as _, panic_probe as _};
 #[used]
 pub static IMAGE_DEF: ImageDef = ImageDef::secure_exe();
 
-// Program metadata for `picotool info`.
-// This isn't needed, but it's recomended to have these minimal entries.
 #[link_section = ".bi_entries"]
 #[used]
 pub static PICOTOOL_ENTRIES: [embassy_rp::binary_info::EntryAddr; 4] = [
-    embassy_rp::binary_info::rp_program_name!(c"Blinky Example"),
-    embassy_rp::binary_info::rp_program_description!(
-        c"This example tests the RP Pico on board LED, connected to gpio 25"
-    ),
+    embassy_rp::binary_info::rp_program_name!(c"Embassy UDP Example"),
+    embassy_rp::binary_info::rp_program_description!(c"UDP example with Embassy and Pico W"),
     embassy_rp::binary_info::rp_cargo_version!(),
     embassy_rp::binary_info::rp_program_build_attribute!(),
 ];
@@ -37,6 +34,15 @@ pub static PICOTOOL_ENTRIES: [embassy_rp::binary_info::EntryAddr; 4] = [
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
+
+static STATE: StaticCell<cyw43::State> = StaticCell::new();
+static RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
+static NET_STACK: StaticCell<Stack<cyw43::NetDriver<'static>>> = StaticCell::new();
+
+#[embassy_executor::task]
+async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) {
+    stack.run().await;
+}
 
 #[embassy_executor::task]
 async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>) -> ! {
@@ -46,15 +52,9 @@ async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'stat
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
+
     let fw = include_bytes!("../../firmware/cyw43-firmware/43439A0.bin");
     let clm = include_bytes!("../../firmware/cyw43-firmware/43439A0_clm.bin");
-
-    // To make flashing faster for development, you may want to flash the firmwares independently
-    // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-    //     probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP2040 --base-address 0x10100000
-    //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP2040 --base-address 0x10140000
-    //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
     let pwr = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
@@ -70,9 +70,8 @@ async fn main(spawner: Spawner) {
         p.DMA_CH0,
     );
 
-    static STATE: StaticCell<cyw43::State> = StaticCell::new();
     let state = STATE.init(cyw43::State::new());
-    let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+    let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
     unwrap!(spawner.spawn(cyw43_task(runner)));
 
     control.init(clm).await;
@@ -80,14 +79,44 @@ async fn main(spawner: Spawner) {
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
 
-    let delay = Duration::from_secs(1);
-    loop {
-        info!("led on!");
-        control.gpio_set(0, true).await;
-        Timer::after(delay).await;
+    control
+        .join_wpa2("SSID", "PASSWORD")
+        .await
+        .expect("Failed to connect to WiFi");
 
-        info!("led off!");
-        control.gpio_set(0, false).await;
-        Timer::after(delay).await;
+    let config = Config::dhcpv4(Default::default());
+    let resources = RESOURCES.init(StackResources::new());
+    let seed = embassy_net::seed::from_high_res_clock();
+    let stack = NET_STACK.init(Stack::new(net_device, config, resources, seed));
+
+    unwrap!(spawner.spawn(net_task(stack)));
+
+    // Wait for network
+    loop {
+        if stack.is_link_up() {
+            if let Some(cfg) = stack.config_v4() {
+                info!("Got IP: {:?}", cfg.address);
+                break;
+            }
+        }
+        Timer::after(Duration::from_millis(500)).await;
+    }
+
+    // UDP socket usage
+    let mut rx_buf = [0u8; 512];
+    let mut tx_buf = [0u8; 512];
+    let mut socket = UdpSocket::new(stack, &mut rx_buf, &mut tx_buf);
+
+    let message = b"Hello, UDP from Pico W!";
+    let target_ip = embassy_net::Ipv4Address::new(192, 168, 1, 100);
+    let target_port = 1337;
+
+    match socket.send_to(message, (target_ip, target_port)).await {
+        Ok(n) => info!("Sent {} bytes to {}:{}", n, target_ip, target_port),
+        Err(e) => warn!("UDP send error: {:?}", e),
+    }
+
+    loop {
+        Timer::after(Duration::from_secs(5)).await;
     }
 }
