@@ -3,3 +3,4 @@ build
 target
 sdk_and_tools/*
 *.hide
+.vscode/settings.json
