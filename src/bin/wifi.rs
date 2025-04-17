@@ -86,7 +86,7 @@ async fn main(spawner: Spawner) {
 
     let config = Config::dhcpv4(Default::default());
     let resources = RESOURCES.init(StackResources::new());
-    let seed = embassy_net::seed::from_high_res_clock();
+    let seed = embassy_time::Instant::now().as_ticks() as u64;
     let stack = NET_STACK.init(Stack::new(net_device, config, resources, seed));
 
     unwrap!(spawner.spawn(net_task(stack)));
